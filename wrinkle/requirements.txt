@@ -1,0 +1,33 @@
+# GUI Framework
+customtkinter>=5.0.0
+
+# Image Processing & Computer Vision
+scikit-image>=0.19.0
+scipy>=1.9.0
+numpy>=1.23.0
+opencv-python>=4.6.0
+
+# Data Handling
+pandas>=1.5.0
+openpyxl>=3.0.0
+
+# Plotting & Visualization
+matplotlib>=3.6.0
+
+# Document Generation
+python-docx>=0.8.11
+
+# Industrial Communication (Optional - for hardware integration)
+# python-opcua>=0.98.13  # This package is deprecated, use asyncua instead if needed
+# asyncua>=0.9.0  # Uncomment if you need OPC-UA functionality
+
+# Database (Optional - for data logging)
+# influxdb-client>=1.36.0  # Uncomment if you need InfluxDB logging
+# pytz>=2022.7  # Uncomment if you need timezone support for InfluxDB
+
+# Image Handling
+Pillow>=9.3.0
+
+# Configuration
+configparser>=5.3.0
+
