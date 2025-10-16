@@ -331,11 +331,32 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                 # edge line
                 edge_x = np.asarray(res["edge_x"], dtype=float)
                 yy = np.arange(y1 - y0)
-                ex = edge_x[y0:y1]
+                
+                # Ensure edge_x has the right length
+                if len(edge_x) != (y1 - y0):
+                    # If edge_x is shorter, pad it or interpolate
+                    if len(edge_x) < (y1 - y0):
+                        # Pad with the last valid value or median
+                        if len(edge_x) > 0:
+                            pad_value = np.nanmedian(edge_x[np.isfinite(edge_x)]) if np.isfinite(edge_x).any() else W / 2.0
+                            edge_x = np.pad(edge_x, (0, (y1 - y0) - len(edge_x)), mode='constant', constant_values=pad_value)
+                        else:
+                            edge_x = np.full(y1 - y0, W / 2.0, dtype=float)
+                    else:
+                        # If edge_x is longer, crop it
+                        edge_x = edge_x[:y1 - y0]
+                
+                ex = edge_x
                 if np.isfinite(ex).any():
                     ex = np.where(np.isfinite(ex), ex, float(np.nanmedian(ex[np.isfinite(ex)])))
                 else:
                     ex = np.full_like(yy, W / 2.0, dtype=float)
+                    
+                # Ensure both arrays have the same length
+                min_len = min(len(ex), len(yy))
+                ex = ex[:min_len]
+                yy = yy[:min_len]
+                
                 ax.plot(ex, yy, color="blue", linewidth=2, label="Beschichtungskante")
 
                 # skeleton overlay
@@ -472,7 +493,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     edge_band_px=320,
                     thetas_deg=(35, 45, 55),
                     frequencies=(0.04, 0.07, 0.10),
-                    min_len_px=16, endpoint_dist_px=240,
+                    min_len_px=16,
                     angle_center_deg=45.0, angle_tol_deg=22,
                     small_remove_px=10
                 )
