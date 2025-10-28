@@ -3095,11 +3095,11 @@ def ALT_call_wrinkle_detection_manual(file_path, canvas, figure, y_lower, y_uppe
         y_lower=y0, y_upper=y1,
         px_per_mm=10.0,
         edge_band_px=None,  # or 0
-        sobel_sigma=1.2,
-        thr_percentile=80,
-        min_len_px=8,
+        sobel_sigma=1.0,    # Reduced from 1.2 - more sensitive
+        thr_percentile=60,  # Reduced from 80 - more permissive
+        min_len_px=5,       # Reduced from 8 - shorter wrinkles
         angle_center_deg=45.0,
-        angle_tol_deg=45,
+        angle_tol_deg=60,   # Increased from 45 - wider angle range
         small_remove_px=0,
         coating_side=coating_side,
     )
@@ -3108,6 +3108,26 @@ def ALT_call_wrinkle_detection_manual(file_path, canvas, figure, y_lower, y_uppe
     print("[DBG] bw_px =", out.get("_dbg_bw_pixels", -1),
           " skel_px =", out.get("_dbg_skel_pixels", -1),
           " n_stats =", 0 if out.get("stats") is None else len(out["stats"]))
+    
+    # Fallback: If no wrinkles detected, try even more permissive parameters
+    if out.get("stats", pd.DataFrame()).empty:
+        print("[FALLBACK] No wrinkles detected with Sobel, trying ultra-permissive parameters...")
+        out = wrinkles.detect_wrinkles_sobel_band(
+            path=file_path,
+            y_lower=y0, y_upper=y1,
+            px_per_mm=10.0,
+            edge_band_px=None,
+            sobel_sigma=0.8,    # Even more sensitive
+            thr_percentile=40,  # Much more permissive
+            min_len_px=3,       # Very short wrinkles
+            angle_center_deg=45.0,
+            angle_tol_deg=75,   # Very wide angle range
+            small_remove_px=0,
+            coating_side=coating_side,
+        )
+        print("[FALLBACK] Ultra-permissive results: bw_px =", out.get("_dbg_bw_pixels", -1),
+              " skel_px =", out.get("_dbg_skel_pixels", -1),
+              " n_stats =", 0 if out.get("stats") is None else len(out["stats"]))
 
     sk_full = out.get("mask_skel", None)
     sk_total = int(sk_full.sum()) if sk_full is not None else -1
@@ -3251,15 +3271,50 @@ def call_wrinkle_detection_manual(file_path, canvas, figure, y_lower, y_upper):
         path=file_path,
         y_lower=y0, y_upper=y1,
         px_per_mm=10.0,
-        edge_band_px=40,
-        tophat_rad=5,
-        min_len_px=100,
-        endpoint_dist_px=15,
+        edge_band_px=80,         # Increased from 40 - wider search area
+        tophat_rad=8,            # Increased from 5 - better for wrinkle detection
+        min_len_px=30,           # Reduced from 100 - less restrictive
+        endpoint_dist_px=40,     # Increased from 15 - more permissive
         angle_center_deg=45.0,   # diagonal
-        angle_tol_deg=12,        # tighten/loosen as needed
-        small_remove_px=64,
+        angle_tol_deg=25,        # Increased from 12 - wider angle tolerance
+        small_remove_px=20,      # Reduced from 64 - less aggressive cleaning
         coating_side="right"     # change to "left" if your coating is left of the edge
     )
+
+    # Fallback: If no wrinkles detected, try with more permissive parameters
+    if out.get("stats", pd.DataFrame()).empty:
+        print("[FALLBACK] No wrinkles detected, trying more permissive parameters...")
+        out = wrn.detect_wrinkles_tophat_edgeband(
+            path=file_path,
+            y_lower=y0, y_upper=y1,
+            px_per_mm=10.0,
+            edge_band_px=120,        # Even wider search area
+            tophat_rad=6,            # Smaller radius for finer features
+            min_len_px=15,           # Very permissive length
+            endpoint_dist_px=60,     # Very permissive endpoint distance
+            angle_center_deg=45.0,   # diagonal
+            angle_tol_deg=35,        # Very wide angle tolerance
+            small_remove_px=10,      # Minimal cleaning
+            coating_side="right",
+            super_permissive=True    # Enable super permissive mode
+        )
+        
+        # If still no wrinkles, try Sobel algorithm
+        if out.get("stats", pd.DataFrame()).empty:
+            print("[FALLBACK] Trying Sobel algorithm...")
+            out = wrn.detect_wrinkles_sobel_band(
+                path=file_path,
+                y_lower=y0, y_upper=y1,
+                px_per_mm=10.0,
+                edge_band_px=100,
+                sobel_sigma=1.0,
+                thr_percentile=70,    # More permissive
+                min_len_px=20,
+                angle_center_deg=45.0,
+                angle_tol_deg=30,     # Wide tolerance
+                small_remove_px=8,
+                coating_side="right"
+            )
 
     # view the returned full-size skeleton in our display ROI (y0:y1, c0:c1)
     sk_full = out.get("mask_skel", None)
