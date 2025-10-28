@@ -165,15 +165,17 @@ def _rd_read_heightmap_table(path):
         
         # Try multiple CSV formats in order of likelihood
         formats = [
-            (sep=";", decimal=",", header=None),  # German format
-            (sep=",", decimal=".", header=None),   # English format
-            (sep=";", decimal=",", header=0),      # With header
-            (sep=",", decimal=".", header=0),      # With header
+            {"sep": ";", "decimal": ",", "header": None},  # German format
+            {"sep": ",", "decimal": ".", "header": None},   # English format
+            {"sep": ";", "decimal": ",", "header": 0},      # With header
+            {"sep": ",", "decimal": ".", "header": 0},      # With header
         ]
         
-        for args in formats:
+        for fmt in formats:
             try:
-                df = pd.read_csv(path, **args, index_col=None if args['header'] is None else 0)
+                # Read CSV with format-specific parameters
+                read_kwargs = {"sep": fmt["sep"], "decimal": fmt["decimal"], "header": fmt["header"]}
+                df = pd.read_csv(path, **read_kwargs)
                 
                 # Verify we got valid data (>30% non-NaN)
                 df_temp = df.apply(pd.to_numeric, errors="coerce")
