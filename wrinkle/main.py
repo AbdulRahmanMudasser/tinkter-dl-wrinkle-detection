@@ -189,8 +189,17 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
 
         # --- 1) ROI ---
         try:
-            y_lo = int(self.entry_y_lower_value.get())
-            y_hi = int(self.entry_y_upper_value.get())
+            y_lo = self.entry_y_lower_value.get()
+            y_hi = self.entry_y_upper_value.get()
+            
+            # Handle empty values gracefully
+            if y_lo == 0 or y_lo is None:
+                y_lo = vars.lower_y_value
+            if y_hi == 0 or y_hi is None:
+                y_hi = vars.upper_y_value
+                
+            y_lo = int(y_lo)
+            y_hi = int(y_hi)
         except Exception:
             messagebox.showerror("Wrinkle-Erkennung", "Bitte ganze Zahlen für Y-Werte eingeben.")
             return
