@@ -133,6 +133,17 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
         self.y_lower_label.grid(row=2, column=1, padx=10, pady=0, sticky="W")
 
         self.entry_y_lower_value = ctk.IntVar(self); self.entry_y_lower_value.set(vars.lower_y_value)
+        
+        # Add trace to handle empty values
+        def handle_empty_lower(*args):
+            try:
+                val = self.entry_y_lower_value.get()
+                if val == 0:
+                    self.entry_y_lower_value.set(vars.lower_y_value)
+            except:
+                self.entry_y_lower_value.set(vars.lower_y_value)
+        self.entry_y_lower_value.trace_add('write', handle_empty_lower)
+        
         self.entry_y_lower = ctk.CTkEntry(self, textvariable=self.entry_y_lower_value, width=100)
         self.entry_y_lower.grid(row=2, column=1, padx=10, pady=0, sticky="E")
 
@@ -140,6 +151,17 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
         self.y_upper_label.grid(row=2, column=2, padx=10, pady=0, sticky="W")
 
         self.entry_y_upper_value = ctk.IntVar(self); self.entry_y_upper_value.set(vars.upper_y_value)
+        
+        # Add trace to handle empty values
+        def handle_empty_upper(*args):
+            try:
+                val = self.entry_y_upper_value.get()
+                if val == 0:
+                    self.entry_y_upper_value.set(vars.upper_y_value)
+            except:
+                self.entry_y_upper_value.set(vars.upper_y_value)
+        self.entry_y_upper_value.trace_add('write', handle_empty_upper)
+        
         self.entry_y_upper = ctk.CTkEntry(self, textvariable=self.entry_y_upper_value, width=100)
         self.entry_y_upper.grid(row=2, column=2, padx=10, pady=0, sticky="E")
 
