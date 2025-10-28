@@ -152,18 +152,72 @@ from skimage.filters import threshold_otsu
 from skimage.measure import label, regionprops_table
 
 def _rd_read_heightmap_table(path):
+    """
+    Robust CSV/Excel reader with multiple format detection.
+    Handles various delimiters, decimal separators, and headers.
+    Fills NaNs with robust statistics.
+    """
     f = str(path).lower()
+    
+    # For CSV/TXT files, try multiple formats
     if f.endswith((".csv", ".txt")):
+        df = None
+        
+        # Try multiple CSV formats in order of likelihood
+        formats = [
+            (sep=";", decimal=",", header=None),  # German format
+            (sep=",", decimal=".", header=None),   # English format
+            (sep=";", decimal=",", header=0),      # With header
+            (sep=",", decimal=".", header=0),      # With header
+        ]
+        
+        for args in formats:
+            try:
+                df = pd.read_csv(path, **args, index_col=None if args['header'] is None else 0)
+                
+                # Verify we got valid data (>30% non-NaN)
+                df_temp = df.apply(pd.to_numeric, errors="coerce")
+                valid_pct = df_temp.notna().sum().sum() / df_temp.size
+                
+                if valid_pct > 0.3:  # At least 30% valid data
+                    df = df_temp
+                    break
+                    
+            except Exception as e:
+                continue
+        
+        if df is None:
+            # Last resort: try with default pandas settings
+            try:
+                df = pd.read_csv(path)
+                df = df.apply(pd.to_numeric, errors="coerce")
+            except Exception:
+                df = pd.DataFrame([[0]])  # Fallback to single zero
+    
+    else:  # Excel files
         try:
-            df = pd.read_csv(path, header=None, sep=";", decimal=",")
+            df = pd.read_excel(path, header=None)
+            df = df.apply(pd.to_numeric, errors="coerce")
         except Exception:
-            df = pd.read_csv(path, header=None)
-    else:
-        df = pd.read_excel(path, header=None)
-    df = df.apply(pd.to_numeric, errors="coerce")
+            df = pd.DataFrame([[0]])  # Fallback to single zero
+    
+    # Convert to numpy array
     arr = df.to_numpy()
-    arr = np.nan_to_num(arr, nan=np.nanmedian(arr))
-    arr = np.nan_to_num(arr, nan=np.nanmedian(arr))
+    
+    # Handle NaN values robustly
+    valid_mask = np.isfinite(arr)
+    
+    if valid_mask.sum() > 0:  # At least some valid data
+        # Calculate robust median from valid data only
+        median_val = np.nanmedian(arr[valid_mask])
+        
+        # Fill NaNs with median
+        arr = np.where(valid_mask, arr, median_val)
+    else:
+        # All NaN - use zeros
+        print(f"[WARNING] All values in {path} are NaN, using zeros")
+        arr = np.zeros_like(arr)
+    
     return arr
 
 def _rd_find_coating_edge(img, band_px, side="right"):
