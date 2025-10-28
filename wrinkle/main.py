@@ -132,36 +132,14 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
         self.y_lower_label = ctk.CTkLabel(self, text="Unterer Y-Wert: ")
         self.y_lower_label.grid(row=2, column=1, padx=10, pady=0, sticky="W")
 
-        self.entry_y_lower_value = ctk.IntVar(self); self.entry_y_lower_value.set(vars.lower_y_value)
-        
-        # Add trace to handle empty values
-        def handle_empty_lower(*args):
-            try:
-                val = self.entry_y_lower_value.get()
-                if val == 0:
-                    self.entry_y_lower_value.set(vars.lower_y_value)
-            except:
-                self.entry_y_lower_value.set(vars.lower_y_value)
-        self.entry_y_lower_value.trace_add('write', handle_empty_lower)
-        
+        self.entry_y_lower_value = tk.StringVar(self); self.entry_y_lower_value.set(str(vars.lower_y_value))
         self.entry_y_lower = ctk.CTkEntry(self, textvariable=self.entry_y_lower_value, width=100)
         self.entry_y_lower.grid(row=2, column=1, padx=10, pady=0, sticky="E")
 
         self.y_upper_label = ctk.CTkLabel(self, text="Oberer Y-Wert: ")
         self.y_upper_label.grid(row=2, column=2, padx=10, pady=0, sticky="W")
 
-        self.entry_y_upper_value = ctk.IntVar(self); self.entry_y_upper_value.set(vars.upper_y_value)
-        
-        # Add trace to handle empty values
-        def handle_empty_upper(*args):
-            try:
-                val = self.entry_y_upper_value.get()
-                if val == 0:
-                    self.entry_y_upper_value.set(vars.upper_y_value)
-            except:
-                self.entry_y_upper_value.set(vars.upper_y_value)
-        self.entry_y_upper_value.trace_add('write', handle_empty_upper)
-        
+        self.entry_y_upper_value = tk.StringVar(self); self.entry_y_upper_value.set(str(vars.upper_y_value))
         self.entry_y_upper = ctk.CTkEntry(self, textvariable=self.entry_y_upper_value, width=100)
         self.entry_y_upper.grid(row=2, column=2, padx=10, pady=0, sticky="E")
 
@@ -211,18 +189,20 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
 
         # --- 1) ROI ---
         try:
-            y_lo = self.entry_y_lower_value.get()
-            y_hi = self.entry_y_upper_value.get()
+            y_lo_str = self.entry_y_lower_value.get()
+            y_hi_str = self.entry_y_upper_value.get()
             
             # Handle empty values gracefully
-            if y_lo == 0 or y_lo is None:
+            if not y_lo_str or y_lo_str.strip() == "":
                 y_lo = vars.lower_y_value
-            if y_hi == 0 or y_hi is None:
-                y_hi = vars.upper_y_value
+            else:
+                y_lo = int(y_lo_str)
                 
-            y_lo = int(y_lo)
-            y_hi = int(y_hi)
-        except Exception:
+            if not y_hi_str or y_hi_str.strip() == "":
+                y_hi = vars.upper_y_value
+            else:
+                y_hi = int(y_hi_str)
+        except ValueError:
             messagebox.showerror("Wrinkle-Erkennung", "Bitte ganze Zahlen für Y-Werte eingeben.")
             return
         if y_lo > y_hi:
