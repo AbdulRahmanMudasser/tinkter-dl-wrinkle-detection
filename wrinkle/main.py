@@ -174,6 +174,12 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
         self.wrinkle_angle_val_label = ctk.CTkLabel(self, textvariable=self.wrinkle_angle_val, width=80, anchor="e")
         self.wrinkle_angle_val_label.grid(row=9, column=1, columnspan=2, padx=30, pady=0, sticky="E")
 
+        self.wrinkle_type_label = ctk.CTkLabel(self, text="Kurz/Lang Wrinkle: ")
+        self.wrinkle_type_label.grid(row=10, column=1, columnspan=2, padx=10, pady=0, sticky="W")
+        self.wrinkle_type_val = tk.StringVar(self); self.wrinkle_type_val.set("0/0")
+        self.wrinkle_type_val_label = ctk.CTkLabel(self, textvariable=self.wrinkle_type_val, width=80, anchor="e")
+        self.wrinkle_type_val_label.grid(row=10, column=1, columnspan=2, padx=30, pady=0, sticky="E")
+
     # ---------------------------
     # Manual detection handler
     # ---------------------------
@@ -438,27 +444,35 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     count += 1
 
                 if count == 0:
-                    return 0, 0.0, 0.0, 0.0
+                    return 0, 0.0, 0.0, 0.0, 0, 0
+                # Classify: Long (>=20mm) vs Short (<20mm)
+                long_count = sum(1 for L in lens_mm if L >= 20.0)
+                short_count = count - long_count
                 return (
                     count,
                     float(np.mean(lens_mm)),
                     float(np.mean(heights_mm)),
                     float(np.median(angles_deg)),
+                    short_count,
+                    long_count,
                 )
 
             # compute KPIs with the same ROI the plots use
-            c1, l1, h1, a1 = _metrics_from_res(best_as[2], y0, y1)
-            c2, l2, h2, a2 = _metrics_from_res(best_bs[2], y0, y1)
+            c1, l1, h1, a1, s1, lg1 = _metrics_from_res(best_as[2], y0, y1)
+            c2, l2, h2, a2, s2, lg2 = _metrics_from_res(best_bs[2], y0, y1)
 
             count = c1 + c2
             avg_len = (l1 + l2) / 2.0 if count > 0 and (l1 > 0 or l2 > 0) else 0.0
             avg_h = (h1 + h2) / 2.0 if count > 0 and (h1 > 0 or h2 > 0) else 0.0
             dom_ang = (a1 + a2) / 2.0 if count > 0 and (a1 > 0 or a2 > 0) else 0.0
+            short_total = s1 + s2
+            long_total = lg1 + lg2
 
             self.wrinkle_count_val.set(f"{int(count)}")
             self.wrinkle_len_val.set(f"{avg_len:.2f}")
             self.wrinkle_height_val.set(f"{avg_h:.2f}")
             self.wrinkle_angle_val.set(f"{dom_ang:.1f}")
+            self.wrinkle_type_val.set(f"{short_total}/{long_total}")
 
             # re-enable the button
             self.button_manuelle_auswertung.configure(state="normal")

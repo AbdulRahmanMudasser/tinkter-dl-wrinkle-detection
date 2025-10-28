@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from scipy.ndimage import gaussian_filter, distance_transform_edt
+from PIL import Image
 from skimage.filters import frangi
 from skimage.morphology import remove_small_objects, skeletonize
 from skimage.measure import label, regionprops
@@ -196,6 +197,12 @@ def _rd_read_heightmap_table(path):
             except Exception:
                 df = pd.DataFrame([[0]])  # Fallback to single zero
     
+    elif f.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')):
+        try:
+            im = Image.open(path).convert('L')  # grayscale
+            df = pd.DataFrame(np.asarray(im, dtype=float))
+        except Exception:
+            df = pd.DataFrame([[0]])
     else:  # Excel files
         try:
             df = pd.read_excel(path, header=None)
