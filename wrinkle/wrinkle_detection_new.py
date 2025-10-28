@@ -262,26 +262,31 @@ def _rd_skel_endpoints(skel):
 
 def _rd_angle_len(coords):
     """
-    Compute angle (0° = vertical) and length (px) of a component.
-    Works for both diagonal families (↗ and ↘).
+    Safe angle/length estimator using PCA on coords with guards for tiny/degenerate sets.
+    Returns (angle_from_vertical_deg, length_px).
     """
     import numpy as np
     pts = np.asarray(coords, dtype=int)
+    if pts.size == 0 or pts.shape[0] < 2:
+        return 0.0, 0.0
     ys, xs = pts[:, 0].astype(float), pts[:, 1].astype(float)
-
+    if np.std(xs) < 1e-6 and np.std(ys) < 1e-6:
+        return 0.0, 0.0
     xs -= xs.mean()
     ys -= ys.mean()
-    cov = np.cov(np.vstack([xs, ys]))
-    w, v = np.linalg.eig(cov)
-    vx, vy = v[0, np.argmax(w)], v[1, np.argmax(w)]
+    try:
+        cov = np.cov(np.vstack([xs, ys]))
+        if not np.isfinite(cov).all():
+            return 0.0, 0.0
+        w, v = np.linalg.eig(cov)
+        if not (np.isfinite(w).all() and np.isfinite(v).all()):
+            return 0.0, 0.0
+        vx, vy = v[0, np.argmax(w)], v[1, np.argmax(w)]
+    except Exception:
+        return 0.0, 0.0
 
-    # raw orientation (0° horizontal):
     phi = (np.degrees(np.arctan2(vy, vx)) + 180.0) % 180.0
-
-    # convert to "angle from vertical": 0° vertical, 90° horizontal
     ang_from_vertical = abs(90.0 - phi)
-
-    # diagonal of bounding box as proxy for length
     length = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min()))
     return ang_from_vertical, length
 
@@ -400,17 +405,8 @@ def detect_wrinkles_tophat_edgeband(
         dist_to_edge = distance_transform_edt(~edge_img)
 
     def _angle_len(coords):
-        pts = np.array(coords, dtype=int)
-        ys, xs = pts[:, 0].astype(float), pts[:, 1].astype(float)
-        xs -= xs.mean(); ys -= ys.mean()
-        cov = np.cov(np.vstack([xs, ys]))
-        w, v = np.linalg.eig(cov)
-        d    = v[:, np.argmax(w)]
-        vx, vy = d[0], d[1]
-        dot  = vy / (np.hypot(vx, vy) + 1e-9)
-        ang  = np.degrees(np.arccos(np.clip(dot, -1, 1)))   # 0°=vertical
-        length = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min()))
-        return ang, length
+        # delegate to robust global
+        return _rd_angle_len(coords)
 
     keep, rows = [], []
     for lbl, coords in zip(props["label"], props["coords"]):
@@ -592,17 +588,8 @@ def detect_wrinkles_sobel_band(
         dist_to_edge = distance_transform_edt(~edge_img)
 
     def _angle_len(coords):
-        pts = np.array(coords, dtype=int)
-        ys, xs = pts[:, 0].astype(float), pts[:, 1].astype(float)
-        xs -= xs.mean(); ys -= ys.mean()
-        cov = np.cov(np.vstack([xs, ys]))
-        w, v = np.linalg.eig(cov)
-        d    = v[:, np.argmax(w)]
-        vx, vy = d[0], d[1]
-        dot  = vy / (np.hypot(vx, vy) + 1e-9)
-        ang  = np.degrees(np.arccos(np.clip(dot, -1, 1)))   # 0°=vertical
-        length = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min()))
-        return ang, length
+        # delegate to robust global
+        return _rd_angle_len(coords)
 
     keep, rows = [], []
     for lbl, coords in zip(props["label"], props["coords"]):
@@ -760,17 +747,8 @@ def detect_wrinkles_gabor_band(
     props = regionprops_table(lab, properties=["label", "coords"])
 
     def _angle_len(coords):
-        ysx = np.array(coords, int)
-        ys  = ysx[:, 0].astype(float); xs = ysx[:, 1].astype(float)
-        xs  = xs - xs.mean(); ys = ys - ys.mean()
-        cov = np.cov(np.vstack([xs, ys]))
-        w, v = np.linalg.eig(cov)
-        d    = v[:, np.argmax(w)]
-        vx, vy = d[0], d[1]
-        dot  = vy / (np.hypot(vx, vy) + 1e-9)
-        ang  = np.degrees(np.arccos(np.clip(dot, -1, 1)))  # 0° = vertical
-        length = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min()))
-        return ang, length
+        # delegate to robust global
+        return _rd_angle_len(coords)
 
     keep, rows = [], []
     for lbl, coords in zip(props["label"], props["coords"]):
