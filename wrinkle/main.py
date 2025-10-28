@@ -331,11 +331,32 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                 # edge line
                 edge_x = np.asarray(res["edge_x"], dtype=float)
                 yy = np.arange(y1 - y0)
-                ex = edge_x[y0:y1]
+                
+                # Ensure edge_x has the right length
+                if len(edge_x) != (y1 - y0):
+                    # If edge_x is shorter, pad it or interpolate
+                    if len(edge_x) < (y1 - y0):
+                        # Pad with the last valid value or median
+                        if len(edge_x) > 0:
+                            pad_value = np.nanmedian(edge_x[np.isfinite(edge_x)]) if np.isfinite(edge_x).any() else W / 2.0
+                            edge_x = np.pad(edge_x, (0, (y1 - y0) - len(edge_x)), mode='constant', constant_values=pad_value)
+                        else:
+                            edge_x = np.full(y1 - y0, W / 2.0, dtype=float)
+                    else:
+                        # If edge_x is longer, crop it
+                        edge_x = edge_x[:y1 - y0]
+                
+                ex = edge_x
                 if np.isfinite(ex).any():
                     ex = np.where(np.isfinite(ex), ex, float(np.nanmedian(ex[np.isfinite(ex)])))
                 else:
                     ex = np.full_like(yy, W / 2.0, dtype=float)
+                    
+                # Ensure both arrays have the same length
+                min_len = min(len(ex), len(yy))
+                ex = ex[:min_len]
+                yy = yy[:min_len]
+                
                 ax.plot(ex, yy, color="blue", linewidth=2, label="Beschichtungskante")
 
                 # skeleton overlay
@@ -443,27 +464,27 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
             def run_one(path, coating_side):
                 cands = []
 
-                # 1) strict
+                # 1) ultra-permissive (our improved parameters)
                 r = wr.detect_wrinkles_tophat_edgeband(
                     path=path, y_lower=y0, y_upper=y1,
                     coating_side=coating_side,
-                    edge_band_px=240, tophat_rad=7,
-                    min_len_px=24, endpoint_dist_px=140,
-                    angle_center_deg=45.0, angle_tol_deg=16,
-                    small_remove_px=20, super_permissive=False
+                    edge_band_px=120, tophat_rad=6,      # More permissive
+                    min_len_px=15, endpoint_dist_px=60,  # Much more permissive
+                    angle_center_deg=45.0, angle_tol_deg=35,  # Wider tolerance
+                    small_remove_px=10, super_permissive=True
                 )
-                cands.append(("TopHatStrict", r, _score(r)))
+                cands.append(("TopHatPermissive", r, _score(r)))
 
-                # 2) permissive
+                # 2) even more permissive fallback
                 r = wr.detect_wrinkles_tophat_edgeband(
                     path=path, y_lower=y0, y_upper=y1,
                     coating_side=coating_side,
-                    edge_band_px=340, tophat_rad=5,
-                    min_len_px=18, endpoint_dist_px=220,
-                    angle_center_deg=45.0, angle_tol_deg=22,
-                    small_remove_px=12, super_permissive=True
+                    edge_band_px=150, tophat_rad=4,      # Even more permissive
+                    min_len_px=10, endpoint_dist_px=80,  # Very permissive
+                    angle_center_deg=45.0, angle_tol_deg=45,  # Very wide tolerance
+                    small_remove_px=5, super_permissive=True
                 )
-                cands.append(("TopHatPerm", r, _score(r)))
+                cands.append(("TopHatUltraPerm", r, _score(r)))
 
                 # 3) gabor rescue
                 r = wr.detect_wrinkles_gabor_band(
@@ -472,13 +493,27 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     edge_band_px=320,
                     thetas_deg=(35, 45, 55),
                     frequencies=(0.04, 0.07, 0.10),
-                    min_len_px=16, endpoint_dist_px=240,
+                    min_len_px=16,
                     angle_center_deg=45.0, angle_tol_deg=22,
                     small_remove_px=10
                 )
                 cands.append(("Gabor", r, _score(r)))
 
-                # 4) ultra-permissive (last resort, esp. for faint AS)
+                # 4) Sobel fallback (our improved Sobel parameters)
+                r = wr.detect_wrinkles_sobel_band(
+                    path=path, y_lower=y0, y_upper=y1,
+                    coating_side=coating_side,
+                    edge_band_px=None,  # No band restriction
+                    sobel_sigma=1.0,    # More sensitive
+                    thr_percentile=60,  # More permissive
+                    min_len_px=5,       # Shorter wrinkles
+                    angle_center_deg=45.0,
+                    angle_tol_deg=60,   # Wide angle range
+                    small_remove_px=0
+                )
+                cands.append(("SobelPermissive", r, _score(r)))
+
+                # 5) ultra-permissive (last resort, esp. for faint AS)
                 r = wr.detect_wrinkles_tophat_edgeband(
                     path=path, y_lower=y0, y_upper=y1,
                     coating_side=coating_side,

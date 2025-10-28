@@ -309,16 +309,19 @@ def detect_wrinkles_tophat_edgeband(
     vals = th_roi[th_roi > 0]
     if vals.size > 32:
         try:
-            t = min(threshold_otsu(vals), np.percentile(vals, 65))
+            # More permissive thresholding - start with lower percentiles
+            t = min(threshold_otsu(vals), np.percentile(vals, 50))  # Reduced from 65
         except Exception:
-            t = np.percentile(vals, 85)
+            t = np.percentile(vals, 70)  # Reduced from 85
     else:
-        t = np.percentile(vals, 85) if vals.size else 0
+        t = np.percentile(vals, 70) if vals.size else 0  # Reduced from 85
     bw = th_roi > t
-    if bw.sum() < 1000 and vals.size:
-        bw = th_roi > np.percentile(vals, 75)
-    if bw.sum() < 200 and vals.size:
-        bw = th_roi > np.percentile(vals, 60)
+    if bw.sum() < 2000 and vals.size:  # Increased threshold from 1000
+        bw = th_roi > np.percentile(vals, 60)  # Reduced from 75
+    if bw.sum() < 500 and vals.size:  # Increased threshold from 200
+        bw = th_roi > np.percentile(vals, 45)  # Reduced from 60
+    if bw.sum() < 100 and vals.size:  # Additional fallback
+        bw = th_roi > np.percentile(vals, 35)
 
     # === clean & skeletonize ===
     if small_remove_px and small_remove_px > 0:
