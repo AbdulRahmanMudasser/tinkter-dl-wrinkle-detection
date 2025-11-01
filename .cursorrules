@@ -1,0 +1,112 @@
+# Comic Catalog Manager - Development Standards
+
+## Git Commit Message Standards
+
+### Commit Message Format
+All commit messages MUST follow the Conventional Commit specification:
+- Format: `<type>(<scope>): <subject>`
+- Type must be one of: feat, fix, chore, docs, style, refactor, test, ci, build, perf, revert
+- Subject must be lowercase
+- Subject should be concise and descriptive
+- Keep first line under 72 characters
+
+### Examples
+- feat(auth): add user login functionality
+- fix(api): resolve token refresh issue
+- chore: update dependencies
+- docs(readme): add deployment instructions
+
+### Branch Naming
+- Format: `<type>/<descriptive-name>`
+- Use lowercase and hyphens
+- Example: feat/add-user-authentication or fix/resolve-api-timeout
+
+### Pull Request Format
+- Title: Follow Conventional Commit format (lowercase)
+- Description should include:
+  ### description
+  explain what you changed and why
+
+  ### changes
+  - list main changes
+
+  ### checklist
+  - [ ] tested locally
+  - [ ] documentation updated
+
+### Key Rules
+- NEVER use capital letters in commit messages
+- NEVER use capital letters in branch names  
+- ALWAYS start with a valid type prefix
+- ALWAYS use conventional commit format
+- ALWAYS keep messages concise and lowercase
+
+### File Verification Before Commits
+- ALWAYS verify file paths exist before creating commit commands
+- Use `Test-Path` (PowerShell) or `ls` (bash) to verify files exist
+- NEVER include non-existent files in git add commands
+- When user requests commits, verify ALL file paths first using:
+  - `git status` to see actual modified/untracked files
+  - `Test-Path <file-path>` to verify each file exists
+- Only propose commits with verified file paths
+- If file doesn't exist, either skip it or inform the user
+
+### Documentation File Naming Standards
+- Global/project README file: MUST be named "README.md" (capital letters, no hyphens) and placed in the project root
+- All other documentation files created by cursor (guides, plans, user guides, implementation summaries, etc.):
+  - MUST be placed in a folder named "helping-documentations" (all lowercase with hyphens)
+  - MUST use all lowercase filenames
+  - MUST use hyphens (-) instead of underscores (_)
+  - Examples: "helping-documentations/project-summary.md", "helping-documentations/user-guide.md", "helping-documentations/implementation-plan.md", "helping-documentations/api-documentation.md"
+- NEVER use "README.md" for cursor-generated documentation files (except the main project README)
+- NEVER use underscores in filenames, always use hyphens
+
+## Responsive Design - All Screens
+- ALWAYS design mobile-first: start with smallest screen (320px+), then enhance for larger screens
+- Test on all breakpoints: mobile (320px-639px), tablet (640px-1023px), desktop (1024px+)
+- Use Tailwind responsive prefixes: `sm:` (640px), `md:` (768px), `lg:` (1024px), `xl:` (1280px), `2xl:` (1536px)
+- Typography: `text-sm md:text-base lg:text-lg` for responsive text sizing
+- Grid layouts: `grid-cols-1 md:grid-cols-2 lg:grid-cols-3` for responsive columns
+- Spacing: adjust padding/margin per breakpoint `p-4 md:p-6 lg:p-8`
+- Images: always use `w-full h-auto` to maintain aspect ratio across screens
+- Navigation: mobile hamburger menu that converts to horizontal nav on desktop
+- Tables: make scrollable on mobile or convert to cards `overflow-x-auto`
+- Hide/show elements: `hidden md:block` to show on medium+ screens only
+- Touch targets: minimum 44x44px on mobile devices
+- Forms: stack inputs vertically on mobile, side-by-side on desktop
+- Buttons: full-width on mobile, auto-width on desktop `w-full md:w-auto`
+- Sidebars: collapse on mobile with overlay, fixed on desktop
+- Cards: single column on mobile, multi-column grid on larger screens
+- Modals/dialogs: full-screen on mobile, centered modal on desktop
+- Icons: appropriate size for each screen (smaller on mobile, larger on desktop)
+
+## Security Best Practices
+- NEVER commit API keys, secrets, tokens, or credentials to git
+- Use environment variables (.env) for all sensitive configuration
+- Add .env files to .gitignore to prevent accidental commits
+- Validate and sanitize ALL user inputs before processing
+- Use HTTPS for all API calls and external resources
+- Implement proper authentication checks in protected routes
+- Protect against XSS attacks by sanitizing user-generated content
+- Use parameterized queries/prepared statements (never raw SQL or string concatenation)
+- Keep all dependencies updated with latest security patches
+- Implement rate limiting on API endpoints
+- Use Content Security Policy (CSP) headers when possible
+- Hash passwords using bcrypt or similar (never store plain text)
+- Implement CSRF protection for state-changing operations
+- Set secure, HttpOnly cookies for session management
+- Limit request body size to prevent DoS attacks
+- Log security events but never log sensitive data
+- Use environment-specific configurations (dev, staging, prod)
+- Restrict CORS origins to trusted domains only
+- Implement input length limits to prevent buffer overflow
+- Escape special characters in user-generated content
+
+### Documentation File Naming Standards
+- Global/project README file: MUST be named "README.md" (capital letters, no hyphens)
+- All other documentation files created by cursor (guides, plans, user guides, implementation summaries, etc.):
+  - MUST use all lowercase filenames
+  - MUST use hyphens (-) instead of underscores (_)
+  - Examples: "project-summary.md", "user-guide.md", "implementation-plan.md", "api-documentation.md"
+- NEVER use "README.md" for cursor-generated documentation files (except the main project README)
+- NEVER use underscores in filenames, always use hyphens

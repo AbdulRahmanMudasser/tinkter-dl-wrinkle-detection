@@ -132,14 +132,14 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
         self.y_lower_label = ctk.CTkLabel(self, text="Unterer Y-Wert: ")
         self.y_lower_label.grid(row=2, column=1, padx=10, pady=0, sticky="W")
 
-        self.entry_y_lower_value = ctk.IntVar(self); self.entry_y_lower_value.set(vars.lower_y_value)
+        self.entry_y_lower_value = tk.StringVar(self); self.entry_y_lower_value.set(str(vars.lower_y_value))
         self.entry_y_lower = ctk.CTkEntry(self, textvariable=self.entry_y_lower_value, width=100)
         self.entry_y_lower.grid(row=2, column=1, padx=10, pady=0, sticky="E")
 
         self.y_upper_label = ctk.CTkLabel(self, text="Oberer Y-Wert: ")
         self.y_upper_label.grid(row=2, column=2, padx=10, pady=0, sticky="W")
 
-        self.entry_y_upper_value = ctk.IntVar(self); self.entry_y_upper_value.set(vars.upper_y_value)
+        self.entry_y_upper_value = tk.StringVar(self); self.entry_y_upper_value.set(str(vars.upper_y_value))
         self.entry_y_upper = ctk.CTkEntry(self, textvariable=self.entry_y_upper_value, width=100)
         self.entry_y_upper.grid(row=2, column=2, padx=10, pady=0, sticky="E")
 
@@ -174,6 +174,12 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
         self.wrinkle_angle_val_label = ctk.CTkLabel(self, textvariable=self.wrinkle_angle_val, width=80, anchor="e")
         self.wrinkle_angle_val_label.grid(row=9, column=1, columnspan=2, padx=30, pady=0, sticky="E")
 
+        self.wrinkle_type_label = ctk.CTkLabel(self, text="Kurz/Lang Wrinkle: ")
+        self.wrinkle_type_label.grid(row=10, column=1, columnspan=2, padx=10, pady=0, sticky="W")
+        self.wrinkle_type_val = tk.StringVar(self); self.wrinkle_type_val.set("0/0")
+        self.wrinkle_type_val_label = ctk.CTkLabel(self, textvariable=self.wrinkle_type_val, width=80, anchor="e")
+        self.wrinkle_type_val_label.grid(row=10, column=1, columnspan=2, padx=30, pady=0, sticky="E")
+
     # ---------------------------
     # Manual detection handler
     # ---------------------------
@@ -189,9 +195,20 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
 
         # --- 1) ROI ---
         try:
-            y_lo = int(self.entry_y_lower_value.get())
-            y_hi = int(self.entry_y_upper_value.get())
-        except Exception:
+            y_lo_str = self.entry_y_lower_value.get()
+            y_hi_str = self.entry_y_upper_value.get()
+            
+            # Handle empty values gracefully
+            if not y_lo_str or y_lo_str.strip() == "":
+                y_lo = vars.lower_y_value
+            else:
+                y_lo = int(y_lo_str)
+                
+            if not y_hi_str or y_hi_str.strip() == "":
+                y_hi = vars.upper_y_value
+            else:
+                y_hi = int(y_hi_str)
+        except ValueError:
             messagebox.showerror("Wrinkle-Erkennung", "Bitte ganze Zahlen für Y-Werte eingeben.")
             return
         if y_lo > y_hi:
@@ -365,12 +382,10 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                 if ys.size:
                     ax.scatter(xs, ys, s=4, linewidths=0, c="#00FFFF", alpha=0.9)
 
-                # endpoint labels
-                for i, (ry, rx) in enumerate(res.get("wrinkle_points", []), start=1):
+                # endpoints only (decluttered overlay)
+                for (ry, rx) in res.get("wrinkle_points", []):
                     if y0 <= ry < y1:
-                        ax.scatter([rx], [ry - y0], s=36, c="red", edgecolors="none")
-                        ax.text(rx + 6, ry - y0, f"Wrinkle: {i}", color="red", fontsize=9,
-                                va="center", bbox=dict(facecolor="white", alpha=0.5, edgecolor="none", pad=0.5))
+                        ax.scatter([rx], [ry - y0], s=28, c="red", edgecolors="none")
 
                 ax.legend(loc="upper right", framealpha=0.85)
                 ax.set_xlabel("X-axis [pixels]");
@@ -429,27 +444,35 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     count += 1
 
                 if count == 0:
-                    return 0, 0.0, 0.0, 0.0
+                    return 0, 0.0, 0.0, 0.0, 0, 0
+                # Classify: Long (>=20mm) vs Short (<20mm)
+                long_count = sum(1 for L in lens_mm if L >= 20.0)
+                short_count = count - long_count
                 return (
                     count,
                     float(np.mean(lens_mm)),
                     float(np.mean(heights_mm)),
                     float(np.median(angles_deg)),
+                    short_count,
+                    long_count,
                 )
 
             # compute KPIs with the same ROI the plots use
-            c1, l1, h1, a1 = _metrics_from_res(best_as[2], y0, y1)
-            c2, l2, h2, a2 = _metrics_from_res(best_bs[2], y0, y1)
+            c1, l1, h1, a1, s1, lg1 = _metrics_from_res(best_as[2], y0, y1)
+            c2, l2, h2, a2, s2, lg2 = _metrics_from_res(best_bs[2], y0, y1)
 
             count = c1 + c2
             avg_len = (l1 + l2) / 2.0 if count > 0 and (l1 > 0 or l2 > 0) else 0.0
             avg_h = (h1 + h2) / 2.0 if count > 0 and (h1 > 0 or h2 > 0) else 0.0
             dom_ang = (a1 + a2) / 2.0 if count > 0 and (a1 > 0 or a2 > 0) else 0.0
+            short_total = s1 + s2
+            long_total = lg1 + lg2
 
             self.wrinkle_count_val.set(f"{int(count)}")
             self.wrinkle_len_val.set(f"{avg_len:.2f}")
             self.wrinkle_height_val.set(f"{avg_h:.2f}")
             self.wrinkle_angle_val.set(f"{dom_ang:.1f}")
+            self.wrinkle_type_val.set(f"{short_total}/{long_total}")
 
             # re-enable the button
             self.button_manuelle_auswertung.configure(state="normal")
@@ -464,65 +487,60 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
             def run_one(path, coating_side):
                 cands = []
 
-                # 1) ultra-permissive (our improved parameters)
+                # 1) Balanced Top-Hat (stricter defaults)
                 r = wr.detect_wrinkles_tophat_edgeband(
                     path=path, y_lower=y0, y_upper=y1,
                     coating_side=coating_side,
-                    edge_band_px=120, tophat_rad=6,      # More permissive
-                    min_len_px=15, endpoint_dist_px=60,  # Much more permissive
-                    angle_center_deg=45.0, angle_tol_deg=35,  # Wider tolerance
-                    small_remove_px=10, super_permissive=True
+                    edge_band_px=100, tophat_rad=8,
+                    min_len_px=30, endpoint_dist_px=40,
+                    angle_center_deg=45.0, angle_tol_deg=18,
+                    small_remove_px=20, super_permissive=False
                 )
-                cands.append(("TopHatPermissive", r, _score(r)))
+                cands.append(("TopHatBalanced", r, _score(r)))
 
-                # 2) even more permissive fallback
+                # 2) Strict Top-Hat (fewer false positives)
                 r = wr.detect_wrinkles_tophat_edgeband(
                     path=path, y_lower=y0, y_upper=y1,
                     coating_side=coating_side,
-                    edge_band_px=150, tophat_rad=4,      # Even more permissive
-                    min_len_px=10, endpoint_dist_px=80,  # Very permissive
-                    angle_center_deg=45.0, angle_tol_deg=45,  # Very wide tolerance
-                    small_remove_px=5, super_permissive=True
+                    edge_band_px=80, tophat_rad=10,
+                    min_len_px=35, endpoint_dist_px=30,
+                    angle_center_deg=45.0, angle_tol_deg=16,
+                    small_remove_px=25, super_permissive=False
                 )
-                cands.append(("TopHatUltraPerm", r, _score(r)))
+                cands.append(("TopHatStrict", r, _score(r)))
 
-                # 3) gabor rescue
-                r = wr.detect_wrinkles_gabor_band(
-                    path=path, y_lower=y0, y_upper=y1,
-                    coating_side=coating_side,
-                    edge_band_px=320,
-                    thetas_deg=(35, 45, 55),
-                    frequencies=(0.04, 0.07, 0.10),
-                    min_len_px=16,
-                    angle_center_deg=45.0, angle_tol_deg=22,
-                    small_remove_px=10
-                )
-                cands.append(("Gabor", r, _score(r)))
-
-                # 4) Sobel fallback (our improved Sobel parameters)
+                # 3) Balanced Sobel (good sensitivity/selectivity)
                 r = wr.detect_wrinkles_sobel_band(
                     path=path, y_lower=y0, y_upper=y1,
                     coating_side=coating_side,
-                    edge_band_px=None,  # No band restriction
-                    sobel_sigma=1.0,    # More sensitive
-                    thr_percentile=60,  # More permissive
-                    min_len_px=5,       # Shorter wrinkles
-                    angle_center_deg=45.0,
-                    angle_tol_deg=60,   # Wide angle range
-                    small_remove_px=0
+                    edge_band_px=120, sobel_sigma=1.2,
+                    thr_percentile=75, min_len_px=30,
+                    angle_center_deg=45.0, angle_tol_deg=18,
+                    small_remove_px=16
                 )
-                cands.append(("SobelPermissive", r, _score(r)))
+                cands.append(("SobelBalanced", r, _score(r)))
 
-                # 5) ultra-permissive (last resort, esp. for faint AS)
-                r = wr.detect_wrinkles_tophat_edgeband(
+                # 4) Gabor (alternative frequency domain)
+                r = wr.detect_wrinkles_gabor_band(
                     path=path, y_lower=y0, y_upper=y1,
                     coating_side=coating_side,
-                    edge_band_px=420, tophat_rad=4,
-                    min_len_px=12, endpoint_dist_px=260,
-                    angle_center_deg=45.0, angle_tol_deg=28,
-                    small_remove_px=6, super_permissive=True
+                    edge_band_px=280, thetas_deg=(40, 45, 50),
+                    frequencies=(0.05, 0.08), min_len_px=30,
+                    angle_center_deg=45.0, angle_tol_deg=18,
+                    small_remove_px=18
                 )
-                cands.append(("TopHatUltraPerm", r, _score(r)))
+                cands.append(("Gabor", r, _score(r)))
+
+                # 5) Fallback: permissive Sobel (last resort)
+                r = wr.detect_wrinkles_sobel_band(
+                    path=path, y_lower=y0, y_upper=y1,
+                    coating_side=coating_side,
+                    edge_band_px=None, sobel_sigma=1.0,
+                    thr_percentile=70, min_len_px=20,
+                    angle_center_deg=45.0, angle_tol_deg=25,
+                    small_remove_px=12
+                )
+                cands.append(("SobelFallback", r, _score(r)))
 
                 name, best_res, sc = max(cands, key=lambda z: z[2])
                 return (name, coating_side, best_res, sc)
