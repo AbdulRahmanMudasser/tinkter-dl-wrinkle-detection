@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from scipy.ndimage import gaussian_filter, distance_transform_edt
+from PIL import Image
 from skimage.filters import frangi
 from skimage.morphology import remove_small_objects, skeletonize
 from skimage.measure import label, regionprops
@@ -152,18 +153,80 @@ from skimage.filters import threshold_otsu
 from skimage.measure import label, regionprops_table
 
 def _rd_read_heightmap_table(path):
+    """
+    Robust CSV/Excel reader with multiple format detection.
+    Handles various delimiters, decimal separators, and headers.
+    Fills NaNs with robust statistics.
+    """
     f = str(path).lower()
+    
+    # For CSV/TXT files, try multiple formats
     if f.endswith((".csv", ".txt")):
+        df = None
+        
+        # Try multiple CSV formats in order of likelihood
+        formats = [
+            {"sep": ";", "decimal": ",", "header": None},  # German format
+            {"sep": ",", "decimal": ".", "header": None},   # English format
+            {"sep": ";", "decimal": ",", "header": 0},      # With header
+            {"sep": ",", "decimal": ".", "header": 0},      # With header
+        ]
+        
+        for fmt in formats:
+            try:
+                # Read CSV with format-specific parameters
+                read_kwargs = {"sep": fmt["sep"], "decimal": fmt["decimal"], "header": fmt["header"]}
+                df = pd.read_csv(path, **read_kwargs)
+                
+                # Verify we got valid data (>30% non-NaN)
+                df_temp = df.apply(pd.to_numeric, errors="coerce")
+                valid_pct = df_temp.notna().sum().sum() / df_temp.size
+                
+                if valid_pct > 0.3:  # At least 30% valid data
+                    df = df_temp
+                    break
+                    
+            except Exception as e:
+                continue
+        
+        if df is None:
+            # Last resort: try with default pandas settings
+            try:
+                df = pd.read_csv(path)
+                df = df.apply(pd.to_numeric, errors="coerce")
+            except Exception:
+                df = pd.DataFrame([[0]])  # Fallback to single zero
+    
+    elif f.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')):
         try:
-            df = pd.read_csv(path, header=None, sep=";", decimal=",")
+            im = Image.open(path).convert('L')  # grayscale
+            df = pd.DataFrame(np.asarray(im, dtype=float))
         except Exception:
-            df = pd.read_csv(path, header=None)
-    else:
-        df = pd.read_excel(path, header=None)
-    df = df.apply(pd.to_numeric, errors="coerce")
+            df = pd.DataFrame([[0]])
+    else:  # Excel files
+        try:
+            df = pd.read_excel(path, header=None)
+            df = df.apply(pd.to_numeric, errors="coerce")
+        except Exception:
+            df = pd.DataFrame([[0]])  # Fallback to single zero
+    
+    # Convert to numpy array
     arr = df.to_numpy()
-    arr = np.nan_to_num(arr, nan=np.nanmedian(arr))
-    arr = np.nan_to_num(arr, nan=np.nanmedian(arr))
+    
+    # Handle NaN values robustly
+    valid_mask = np.isfinite(arr)
+    
+    if valid_mask.sum() > 0:  # At least some valid data
+        # Calculate robust median from valid data only
+        median_val = np.nanmedian(arr[valid_mask])
+        
+        # Fill NaNs with median
+        arr = np.where(valid_mask, arr, median_val)
+    else:
+        # All NaN - use zeros
+        print(f"[WARNING] All values in {path} are NaN, using zeros")
+        arr = np.zeros_like(arr)
+    
     return arr
 
 def _rd_find_coating_edge(img, band_px, side="right"):
@@ -206,26 +269,31 @@ def _rd_skel_endpoints(skel):
 
 def _rd_angle_len(coords):
     """
-    Compute angle (0° = vertical) and length (px) of a component.
-    Works for both diagonal families (↗ and ↘).
+    Safe angle/length estimator using PCA on coords with guards for tiny/degenerate sets.
+    Returns (angle_from_vertical_deg, length_px).
     """
     import numpy as np
     pts = np.asarray(coords, dtype=int)
+    if pts.size == 0 or pts.shape[0] < 2:
+        return 0.0, 0.0
     ys, xs = pts[:, 0].astype(float), pts[:, 1].astype(float)
-
+    if np.std(xs) < 1e-6 and np.std(ys) < 1e-6:
+        return 0.0, 0.0
     xs -= xs.mean()
     ys -= ys.mean()
-    cov = np.cov(np.vstack([xs, ys]))
-    w, v = np.linalg.eig(cov)
-    vx, vy = v[0, np.argmax(w)], v[1, np.argmax(w)]
+    try:
+        cov = np.cov(np.vstack([xs, ys]))
+        if not np.isfinite(cov).all():
+            return 0.0, 0.0
+        w, v = np.linalg.eig(cov)
+        if not (np.isfinite(w).all() and np.isfinite(v).all()):
+            return 0.0, 0.0
+        vx, vy = v[0, np.argmax(w)], v[1, np.argmax(w)]
+    except Exception:
+        return 0.0, 0.0
 
-    # raw orientation (0° horizontal):
     phi = (np.degrees(np.arctan2(vy, vx)) + 180.0) % 180.0
-
-    # convert to "angle from vertical": 0° vertical, 90° horizontal
     ang_from_vertical = abs(90.0 - phi)
-
-    # diagonal of bounding box as proxy for length
     length = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min()))
     return ang_from_vertical, length
 
@@ -344,17 +412,8 @@ def detect_wrinkles_tophat_edgeband(
         dist_to_edge = distance_transform_edt(~edge_img)
 
     def _angle_len(coords):
-        pts = np.array(coords, dtype=int)
-        ys, xs = pts[:, 0].astype(float), pts[:, 1].astype(float)
-        xs -= xs.mean(); ys -= ys.mean()
-        cov = np.cov(np.vstack([xs, ys]))
-        w, v = np.linalg.eig(cov)
-        d    = v[:, np.argmax(w)]
-        vx, vy = d[0], d[1]
-        dot  = vy / (np.hypot(vx, vy) + 1e-9)
-        ang  = np.degrees(np.arccos(np.clip(dot, -1, 1)))   # 0°=vertical
-        length = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min()))
-        return ang, length
+        # delegate to robust global
+        return _rd_angle_len(coords)
 
     keep, rows = [], []
     for lbl, coords in zip(props["label"], props["coords"]):
@@ -536,17 +595,8 @@ def detect_wrinkles_sobel_band(
         dist_to_edge = distance_transform_edt(~edge_img)
 
     def _angle_len(coords):
-        pts = np.array(coords, dtype=int)
-        ys, xs = pts[:, 0].astype(float), pts[:, 1].astype(float)
-        xs -= xs.mean(); ys -= ys.mean()
-        cov = np.cov(np.vstack([xs, ys]))
-        w, v = np.linalg.eig(cov)
-        d    = v[:, np.argmax(w)]
-        vx, vy = d[0], d[1]
-        dot  = vy / (np.hypot(vx, vy) + 1e-9)
-        ang  = np.degrees(np.arccos(np.clip(dot, -1, 1)))   # 0°=vertical
-        length = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min()))
-        return ang, length
+        # delegate to robust global
+        return _rd_angle_len(coords)
 
     keep, rows = [], []
     for lbl, coords in zip(props["label"], props["coords"]):
@@ -704,17 +754,8 @@ def detect_wrinkles_gabor_band(
     props = regionprops_table(lab, properties=["label", "coords"])
 
     def _angle_len(coords):
-        ysx = np.array(coords, int)
-        ys  = ysx[:, 0].astype(float); xs = ysx[:, 1].astype(float)
-        xs  = xs - xs.mean(); ys = ys - ys.mean()
-        cov = np.cov(np.vstack([xs, ys]))
-        w, v = np.linalg.eig(cov)
-        d    = v[:, np.argmax(w)]
-        vx, vy = d[0], d[1]
-        dot  = vy / (np.hypot(vx, vy) + 1e-9)
-        ang  = np.degrees(np.arccos(np.clip(dot, -1, 1)))  # 0° = vertical
-        length = float(np.hypot(xs.max() - xs.min(), ys.max() - ys.min()))
-        return ang, length
+        # delegate to robust global
+        return _rd_angle_len(coords)
 
     keep, rows = [], []
     for lbl, coords in zip(props["label"], props["coords"]):
