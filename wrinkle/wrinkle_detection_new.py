@@ -689,7 +689,7 @@ def detect_wrinkles_sobel_band(
         before_filter = len(eps)
         eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
         after_filter = len(eps)
-        print(f"  [EP] lbl={lbl}: {before_filter} endpoints → {after_filter} (start/end only)")
+        print(f"  [EP] lbl={lbl}: {before_filter} endpoints -> {after_filter} (start/end only)")
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 
