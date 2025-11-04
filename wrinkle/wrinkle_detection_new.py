@@ -267,6 +267,27 @@ def _rd_skel_endpoints(skel):
     ys, xs = np.where((skel) & (nn==1))
     return list(zip(ys, xs))
 
+def _rd_start_end_endpoints(eps):
+    """
+    From a list of skeleton endpoints, return only the start (min Y) and end (max Y).
+    Returns: [(y_start, x_start), (y_end, x_end)] or empty list.
+    """
+    import numpy as np
+    if len(eps) < 2:
+        return eps  # If only 1 or 0 endpoints, return as-is
+    
+    eps_arr = np.array(eps)
+    y_coords = eps_arr[:, 0]
+    
+    # Find indices of min and max Y
+    idx_start = np.argmin(y_coords)
+    idx_end = np.argmax(y_coords)
+    
+    if idx_start == idx_end:
+        return [eps[idx_start]]  # Same point, return once
+    
+    return [eps[idx_start], eps[idx_end]]
+
 def _rd_angle_len(coords):
     """
     Safe angle/length estimator using PCA on coords with guards for tiny/degenerate sets.
@@ -428,7 +449,8 @@ def detect_wrinkles_tophat_edgeband(
             continue
 
         ang, length = _angle_len(coords)  # 0° vertical, 90° horizontal
-        if (abs(ang - angle_center_deg) <= angle_tol_deg) and (length >= min_len_px):
+        # Strict diagonal-only: 33° to 57° (45° ± 12°), reject horizontal/vertical
+        if (33.0 <= ang <= 57.0) and (length >= min_len_px):
             keep.append(lbl)
             rows.append({
                 "label": int(lbl),
@@ -442,10 +464,8 @@ def detect_wrinkles_tophat_edgeband(
         for lbl, coords in zip(props["label"], props["coords"]):
             coords = np.array(coords, dtype=int)
             ang, length = _rd_angle_len(coords)
-            # accept both diagonal families
-            diag_ok = (
-                    abs(ang - 45.0) <= max(18, angle_tol_deg)
-            )
+            # Strict diagonal-only: 33° to 57° (no horizontal/vertical)
+            diag_ok = (33.0 <= ang <= 57.0)
             if diag_ok and length >= min_len_px:
                 keep.append(lbl)
                 rows.append({
@@ -459,12 +479,13 @@ def detect_wrinkles_tophat_edgeband(
 
     keep_mask = np.isin(lab, keep)
 
-    # endpoints back to full frame Y
+    # endpoints back to full frame Y (only start/end per wrinkle)
     kept_endpoints, kept_labels = [], []
     lab2 = label(keep_mask, connectivity=2)
     for lbl in np.unique(lab2)[1:]:
         comp = (lab2 == lbl)
         eps = _rd_skel_endpoints(comp)
+        eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 
@@ -611,10 +632,8 @@ def detect_wrinkles_sobel_band(
             continue
 
         ang, length = _rd_angle_len(coords)
-        # accept both diagonal families
-        diag_ok = (
-                abs(ang - 45.0) <= max(18, angle_tol_deg)
-        )
+        # Strict diagonal-only: 33° to 57° (45° ± 12°), reject horizontal/vertical
+        diag_ok = (33.0 <= ang <= 57.0)
         if diag_ok and length >= min_len_px:
             keep.append(lbl)
             rows.append({
@@ -626,12 +645,13 @@ def detect_wrinkles_sobel_band(
 
     keep_mask = np.isin(lab, keep)
 
-    # map kept endpoints back to full frame Y
+    # map kept endpoints back to full frame Y (only start/end per wrinkle)
     kept_endpoints, kept_labels = [], []
     lab2 = label(keep_mask, connectivity=2)
     for lbl in np.unique(lab2)[1:]:
         comp = (lab2 == lbl)
         eps = _rd_skel_endpoints(comp)
+        eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 
@@ -760,7 +780,8 @@ def detect_wrinkles_gabor_band(
     keep, rows = [], []
     for lbl, coords in zip(props["label"], props["coords"]):
         ang, length = _angle_len(coords)
-        if (abs(ang - angle_center_deg) <= angle_tol_deg) and (length >= min_len_px):
+        # Strict diagonal-only: 33° to 57° (45° ± 12°), reject horizontal/vertical
+        if (33.0 <= ang <= 57.0) and (length >= min_len_px):
             keep.append(lbl)
             rows.append({
                 "label": int(lbl),
@@ -771,12 +792,13 @@ def detect_wrinkles_gabor_band(
 
     keep_mask = np.isin(lab, keep)
 
-    # --- map to full frame + endpoints ---
+    # --- map to full frame + endpoints (only start/end per wrinkle) ---
     kept_endpoints, kept_labels = [], []
     lab2 = label(keep_mask, connectivity=2)
     for lbl in np.unique(lab2)[1:]:
         comp = (lab2 == lbl)
         eps = _rd_skel_endpoints(comp)
+        eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 

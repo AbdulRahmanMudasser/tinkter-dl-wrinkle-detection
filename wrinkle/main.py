@@ -374,7 +374,21 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                 ex = ex[:min_len]
                 yy = yy[:min_len]
                 
-                ax.plot(ex, yy, color="blue", linewidth=2, label="Beschichtungskante")
+                # Trim blue line to wrinkle region only
+                wrinkle_points = res.get("wrinkle_points", [])
+                if wrinkle_points:
+                    # Get Y range of wrinkles (relative to y0)
+                    wrinkle_ys = [ry - y0 for (ry, rx) in wrinkle_points if y0 <= ry < y1]
+                    if wrinkle_ys:
+                        y_min_wrinkle = max(0, min(wrinkle_ys) - 10)  # Add 10px margin
+                        y_max_wrinkle = min(len(yy) - 1, max(wrinkle_ys) + 10)
+                        
+                        # Trim arrays to wrinkle region
+                        ex_trimmed = ex[y_min_wrinkle:y_max_wrinkle+1]
+                        yy_trimmed = yy[y_min_wrinkle:y_max_wrinkle+1]
+                        
+                        ax.plot(ex_trimmed, yy_trimmed, color="blue", linewidth=2, label="Beschichtungskante")
+                # If no wrinkles, don't draw blue line
 
                 # skeleton overlay
                 mask = res["mask_skel"]
@@ -382,7 +396,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                 if ys.size:
                     ax.scatter(xs, ys, s=4, linewidths=0, c="#00FFFF", alpha=0.9)
 
-                # endpoints only (decluttered overlay)
+                # endpoints only (decluttered overlay - only start/end per wrinkle)
                 for (ry, rx) in res.get("wrinkle_points", []):
                     if y0 <= ry < y1:
                         ax.scatter([rx], [ry - y0], s=28, c="red", edgecolors="none")
@@ -493,7 +507,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=100, tophat_rad=8,
                     min_len_px=30, endpoint_dist_px=40,
-                    angle_center_deg=45.0, angle_tol_deg=18,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=20, super_permissive=False
                 )
                 cands.append(("TopHatBalanced", r, _score(r)))
@@ -504,7 +518,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=80, tophat_rad=10,
                     min_len_px=35, endpoint_dist_px=30,
-                    angle_center_deg=45.0, angle_tol_deg=16,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=25, super_permissive=False
                 )
                 cands.append(("TopHatStrict", r, _score(r)))
@@ -515,7 +529,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=120, sobel_sigma=1.2,
                     thr_percentile=75, min_len_px=30,
-                    angle_center_deg=45.0, angle_tol_deg=18,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=16
                 )
                 cands.append(("SobelBalanced", r, _score(r)))
@@ -526,7 +540,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=280, thetas_deg=(40, 45, 50),
                     frequencies=(0.05, 0.08), min_len_px=30,
-                    angle_center_deg=45.0, angle_tol_deg=18,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=18
                 )
                 cands.append(("Gabor", r, _score(r)))
@@ -537,7 +551,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=None, sobel_sigma=1.0,
                     thr_percentile=70, min_len_px=20,
-                    angle_center_deg=45.0, angle_tol_deg=25,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=12
                 )
                 cands.append(("SobelFallback", r, _score(r)))
