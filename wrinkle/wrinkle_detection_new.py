@@ -480,10 +480,10 @@ def detect_wrinkles_tophat_edgeband(
     keep_mask = np.isin(lab, keep)
 
     # endpoints back to full frame Y (only start/end per wrinkle)
+    # IMPORTANT: Extract endpoints from ORIGINAL labels to avoid merging nearby wrinkles
     kept_endpoints, kept_labels = [], []
-    lab2 = label(keep_mask, connectivity=2)
-    for lbl in np.unique(lab2)[1:]:
-        comp = (lab2 == lbl)
+    for lbl in keep:
+        comp = (lab == lbl)
         eps = _rd_skel_endpoints(comp)
         eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
@@ -646,10 +646,10 @@ def detect_wrinkles_sobel_band(
     keep_mask = np.isin(lab, keep)
 
     # map kept endpoints back to full frame Y (only start/end per wrinkle)
+    # IMPORTANT: Extract endpoints from ORIGINAL labels to avoid merging nearby wrinkles
     kept_endpoints, kept_labels = [], []
-    lab2 = label(keep_mask, connectivity=2)
-    for lbl in np.unique(lab2)[1:]:
-        comp = (lab2 == lbl)
+    for lbl in keep:
+        comp = (lab == lbl)
         eps = _rd_skel_endpoints(comp)
         eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
@@ -793,10 +793,10 @@ def detect_wrinkles_gabor_band(
     keep_mask = np.isin(lab, keep)
 
     # --- map to full frame + endpoints (only start/end per wrinkle) ---
+    # IMPORTANT: Extract endpoints from ORIGINAL labels to avoid merging nearby wrinkles
     kept_endpoints, kept_labels = [], []
-    lab2 = label(keep_mask, connectivity=2)
-    for lbl in np.unique(lab2)[1:]:
-        comp = (lab2 == lbl)
+    for lbl in keep:
+        comp = (lab == lbl)
         eps = _rd_skel_endpoints(comp)
         eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
