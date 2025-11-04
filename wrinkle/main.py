@@ -406,6 +406,9 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                 ax.set_ylabel("")
                 canvas.draw()
 
+            # Debug: Check endpoint counts
+            print(f"[PLOT] AS endpoints: {len(best_as[2].get('wrinkle_points', []))}, BS endpoints: {len(best_bs[2].get('wrinkle_points', []))}")
+            
             draw_one(self.canvas_wrinkles_AS, self.wrinkles_AS_fig, as_p, best_as[2])
             draw_one(self.canvas_wrinkles_BS, self.wrinkles_BS_fig, bs_p, best_bs[2])
 
