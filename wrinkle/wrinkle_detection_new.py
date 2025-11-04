@@ -500,7 +500,10 @@ def detect_wrinkles_tophat_edgeband(
     for lbl in keep:
         comp = (lab == lbl)
         eps = _rd_skel_endpoints(comp)
+        before_filter = len(eps)
         eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
+        after_filter = len(eps)
+        print(f"  [EP] lbl={lbl}: {before_filter} endpoints -> {after_filter} (start/end only)")
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 
@@ -509,6 +512,8 @@ def detect_wrinkles_tophat_edgeband(
     mask_full   = np.zeros_like(img, dtype=bool); mask_full[y0:y1, :] = keep_mask  # Full mask for measurements
     visual_full = np.zeros_like(img, dtype=bool); visual_full[y0:y1, :] = visual_mask  # Clean mask for viz
     roi_full    = np.zeros_like(img, dtype=bool); roi_full[y0:y1, :]  = roi_mask
+    
+    print(f"[DEBUG] TopHat {coating_side}: kept {len(keep)} wrinkles, mask_full.sum={mask_full.sum()}, visual={visual_full.sum()}")
 
     return {
         "mask_skel": mask_full,  # Full mask for measurements
@@ -855,7 +860,10 @@ def detect_wrinkles_gabor_band(
     for lbl in keep:
         comp = (lab == lbl)
         eps = _rd_skel_endpoints(comp)
+        before_filter = len(eps)
         eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
+        after_filter = len(eps)
+        print(f"  [EP] lbl={lbl}: {before_filter} endpoints -> {after_filter} (start/end only)")
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 
@@ -864,6 +872,8 @@ def detect_wrinkles_gabor_band(
     mask_full = np.zeros_like(img, bool); mask_full[y0:y1, :] = keep_mask  # Full mask for measurements
     visual_full = np.zeros_like(img, bool); visual_full[y0:y1, :] = visual_mask  # Clean mask for viz
     roi_full  = np.zeros_like(img, bool); roi_full[y0:y1, :]  = roi_mask
+    
+    print(f"[DEBUG] Gabor {coating_side}: kept {len(keep)} wrinkles, mask_full.sum={mask_full.sum()}, visual={visual_full.sum()}")
 
     return {
         "mask_skel": mask_full,  # Full mask for measurements
