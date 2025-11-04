@@ -642,6 +642,7 @@ def detect_wrinkles_sobel_band(
                 "length_mm": float(length) / px_per_mm,
                 "angle_deg": float(ang),
             })
+            print(f"[DEBUG] Kept wrinkle lbl={lbl}: ang={ang:.1f}° len={length:.1f}px")
 
     keep_mask = np.isin(lab, keep)
 
