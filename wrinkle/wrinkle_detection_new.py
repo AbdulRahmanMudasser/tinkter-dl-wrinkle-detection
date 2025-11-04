@@ -660,6 +660,8 @@ def detect_wrinkles_sobel_band(
     full_edge = np.full(H, np.nan); full_edge[y0:y1] = edge_x
     mask_full = np.zeros_like(img, dtype=bool); mask_full[y0:y1, :] = keep_mask
     roi_full  = np.zeros_like(img, dtype=bool); roi_full[y0:y1, :]  = roi_mask
+    
+    print(f"[DEBUG] Sobel {coating_side}: kept {len(keep)} wrinkles, mask_full.sum={mask_full.sum()}, skel.sum={skel.sum()}")
 
     return {
         "mask_skel": mask_full,
