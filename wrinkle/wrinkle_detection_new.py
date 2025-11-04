@@ -645,6 +645,23 @@ def detect_wrinkles_sobel_band(
             print(f"[DEBUG] Kept wrinkle lbl={lbl}: ang={ang:.1f}° len={length:.1f}px")
 
     keep_mask = np.isin(lab, keep)
+    
+    # Additional cleanup: Remove horizontal/vertical skeleton branches from kept wrinkles
+    # by filtering out pixels that don't contribute to diagonal structure
+    if keep_mask.sum() > 0:
+        from scipy.ndimage import label as ndlabel
+        # Re-label and check each small component's angle
+        temp_lab = ndlabel(keep_mask)[0]
+        clean_mask = np.zeros_like(keep_mask)
+        for temp_lbl in np.unique(temp_lab)[1:]:
+            comp_coords = np.argwhere(temp_lab == temp_lbl)
+            if len(comp_coords) < 5:
+                continue  # Too small to measure angle reliably
+            ang, _ = _rd_angle_len(comp_coords)
+            # Only keep components that are diagonal (33-57°)
+            if 33.0 <= ang <= 57.0:
+                clean_mask[temp_lab == temp_lbl] = True
+        keep_mask = clean_mask
 
     # map kept endpoints back to full frame Y (only start/end per wrinkle)
     # IMPORTANT: Extract endpoints from ORIGINAL labels to avoid merging nearby wrinkles
