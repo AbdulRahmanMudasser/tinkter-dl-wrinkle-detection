@@ -390,8 +390,8 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                         ax.plot(ex_trimmed, yy_trimmed, color="blue", linewidth=2, label="Beschichtungskante")
                 # If no wrinkles, don't draw blue line
 
-                # skeleton overlay
-                mask = res["mask_skel"]
+                # skeleton overlay (use visual mask for clean diagonal-only display)
+                mask = res.get("mask_visual", res["mask_skel"])  # Fallback to mask_skel if no visual
                 ys, xs = np.where(mask[y0:y1, :])
                 if ys.size:
                     ax.scatter(xs, ys, s=4, linewidths=0, c="#00FFFF", alpha=0.9)
