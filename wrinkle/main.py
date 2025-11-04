@@ -412,61 +412,40 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
             # --- KPIs from visible wrinkles only (respect current ROI y0:y1) ---
             def _metrics_from_res(res, y0, y1):
                 import numpy as np
-                from skimage.measure import label
+                import pandas as pd
 
-                # only endpoints inside the ROI
-                wr_pts = [(ry, rx) for (ry, rx) in res.get("wrinkle_points", [])
-                          if y0 <= ry < y1]
-                mask = res.get("mask_skel", None)
-                if mask is None or mask.sum() == 0 or not wr_pts:
-                    return 0, 0.0, 0.0, 0.0
+                # Use the stats DataFrame directly from detection (already filtered!)
+                stats = res.get("stats", pd.DataFrame())
+                if stats.empty:
+                    return 0, 0.0, 0.0, 0.0, 0, 0
 
-                lab = label(mask, connectivity=2)
                 px_per_mm = float(getattr(vars, "PX_PER_MM_X", 10.0))
-
-                count = 0
-                lens_mm, heights_mm, angles_deg = [], [], []
-                for (ry, rx) in wr_pts:
-                    if not (0 <= ry < lab.shape[0] and 0 <= rx < lab.shape[1]):
-                        continue
-                    lab_id = int(lab[ry, rx])
-                    if lab_id == 0:
-                        continue
-
-                    coords = np.argwhere(lab == lab_id)
-                    if coords.shape[0] < 2:
-                        continue
-
-                    y = coords[:, 0].astype(float)
-                    x = coords[:, 1].astype(float)
-                    # PCA for angle & length
-                    xc, yc = x - x.mean(), y - y.mean()
-                    Sxx = (xc * xc).sum();
-                    Syy = (yc * yc).sum();
-                    Sxy = (xc * yc).sum()
-                    theta = 0.5 * np.arctan2(2 * Sxy, (Sxx - Syy) + 1e-9)
-                    ang = abs(np.rad2deg(theta))
-                    ux, uy = np.cos(theta), np.sin(theta)
-                    proj = xc * ux + yc * uy
-
-                    length_px = float(proj.max() - proj.min())
-                    height_px = float(y.max() - y.min())
-
-                    lens_mm.append(length_px / px_per_mm)
-                    heights_mm.append(height_px / px_per_mm)
-                    angles_deg.append(ang)
-                    count += 1
-
+                
+                # Extract metrics from the stats DataFrame
+                count = len(stats)
                 if count == 0:
                     return 0, 0.0, 0.0, 0.0, 0, 0
+                
+                lens_mm = stats["length_mm"].values if "length_mm" in stats.columns else []
+                angles_deg = stats["angle_deg"].values if "angle_deg" in stats.columns else []
+                
+                # Calculate heights from length (approximation for diagonal wrinkles)
+                # For 45° diagonal, height ≈ length * sin(45°) ≈ 0.7 * length
+                heights_mm = lens_mm * 0.7 if len(lens_mm) > 0 else []
+                
+                avg_len = float(np.mean(lens_mm)) if len(lens_mm) > 0 else 0.0
+                avg_h = float(np.mean(heights_mm)) if len(heights_mm) > 0 else 0.0
+                dom_ang = float(np.median(angles_deg)) if len(angles_deg) > 0 else 0.0
+                
                 # Classify: Long (>=20mm) vs Short (<20mm)
                 long_count = sum(1 for L in lens_mm if L >= 20.0)
                 short_count = count - long_count
+                
                 return (
                     count,
-                    float(np.mean(lens_mm)),
-                    float(np.mean(heights_mm)),
-                    float(np.median(angles_deg)),
+                    avg_len,
+                    avg_h,
+                    dom_ang,
                     short_count,
                     long_count,
                 )
