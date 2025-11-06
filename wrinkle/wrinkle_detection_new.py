@@ -267,6 +267,27 @@ def _rd_skel_endpoints(skel):
     ys, xs = np.where((skel) & (nn==1))
     return list(zip(ys, xs))
 
+def _rd_start_end_endpoints(eps):
+    """
+    From a list of skeleton endpoints, return only the start (min Y) and end (max Y).
+    Returns: [(y_start, x_start), (y_end, x_end)] or empty list.
+    """
+    import numpy as np
+    if len(eps) < 2:
+        return eps  # If only 1 or 0 endpoints, return as-is
+    
+    eps_arr = np.array(eps)
+    y_coords = eps_arr[:, 0]
+    
+    # Find indices of min and max Y
+    idx_start = np.argmin(y_coords)
+    idx_end = np.argmax(y_coords)
+    
+    if idx_start == idx_end:
+        return [eps[idx_start]]  # Same point, return once
+    
+    return [eps[idx_start], eps[idx_end]]
+
 def _rd_angle_len(coords):
     """
     Safe angle/length estimator using PCA on coords with guards for tiny/degenerate sets.
@@ -428,7 +449,8 @@ def detect_wrinkles_tophat_edgeband(
             continue
 
         ang, length = _angle_len(coords)  # 0° vertical, 90° horizontal
-        if (abs(ang - angle_center_deg) <= angle_tol_deg) and (length >= min_len_px):
+        # Strict diagonal-only: 33° to 57° (45° ± 12°), reject horizontal/vertical
+        if (33.0 <= ang <= 57.0) and (length >= min_len_px):
             keep.append(lbl)
             rows.append({
                 "label": int(lbl),
@@ -442,10 +464,8 @@ def detect_wrinkles_tophat_edgeband(
         for lbl, coords in zip(props["label"], props["coords"]):
             coords = np.array(coords, dtype=int)
             ang, length = _rd_angle_len(coords)
-            # accept both diagonal families
-            diag_ok = (
-                    abs(ang - 45.0) <= max(18, angle_tol_deg)
-            )
+            # Strict diagonal-only: 33° to 57° (no horizontal/vertical)
+            diag_ok = (33.0 <= ang <= 57.0)
             if diag_ok and length >= min_len_px:
                 keep.append(lbl)
                 rows.append({
@@ -458,23 +478,46 @@ def detect_wrinkles_tophat_edgeband(
         super_permissive = True
 
     keep_mask = np.isin(lab, keep)
+    
+    # Create separate visual mask: strict sub-component filtering for clean visualization
+    visual_mask = keep_mask.copy()
+    if visual_mask.sum() > 0:
+        from scipy.ndimage import label as ndlabel
+        temp_lab = ndlabel(visual_mask)[0]
+        clean_mask = np.zeros_like(visual_mask)
+        for temp_lbl in np.unique(temp_lab)[1:]:
+            comp_coords = np.argwhere(temp_lab == temp_lbl)
+            if len(comp_coords) < 5:
+                continue
+            ang, _ = _rd_angle_len(comp_coords)
+            if 33.0 <= ang <= 57.0:
+                clean_mask[temp_lab == temp_lbl] = True
+        visual_mask = clean_mask
 
-    # endpoints back to full frame Y
+    # endpoints back to full frame Y (only start/end per wrinkle)
+    # IMPORTANT: Extract endpoints from ORIGINAL labels to avoid merging nearby wrinkles
     kept_endpoints, kept_labels = [], []
-    lab2 = label(keep_mask, connectivity=2)
-    for lbl in np.unique(lab2)[1:]:
-        comp = (lab2 == lbl)
+    for lbl in keep:
+        comp = (lab == lbl)
         eps = _rd_skel_endpoints(comp)
+        before_filter = len(eps)
+        eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
+        after_filter = len(eps)
+        print(f"  [EP] lbl={lbl}: {before_filter} endpoints -> {after_filter} (start/end only)")
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 
     stats_df = pd.DataFrame(rows)
     full_edge_x = np.full(H, np.nan); full_edge_x[y0:y1] = edge_x
-    mask_full   = np.zeros_like(img, dtype=bool); mask_full[y0:y1, :] = keep_mask
+    mask_full   = np.zeros_like(img, dtype=bool); mask_full[y0:y1, :] = keep_mask  # Full mask for measurements
+    visual_full = np.zeros_like(img, dtype=bool); visual_full[y0:y1, :] = visual_mask  # Clean mask for viz
     roi_full    = np.zeros_like(img, dtype=bool); roi_full[y0:y1, :]  = roi_mask
+    
+    print(f"[DEBUG] TopHat {coating_side}: kept {len(keep)} wrinkles, mask_full.sum={mask_full.sum()}, visual={visual_full.sum()}")
 
     return {
-        "mask_skel": mask_full,
+        "mask_skel": mask_full,  # Full mask for measurements
+        "mask_visual": visual_full,  # Clean diagonal-only mask for visualization
         "edge_x": full_edge_x,
         "roi_mask": roi_full,
         "stats": stats_df,
@@ -611,10 +654,8 @@ def detect_wrinkles_sobel_band(
             continue
 
         ang, length = _rd_angle_len(coords)
-        # accept both diagonal families
-        diag_ok = (
-                abs(ang - 45.0) <= max(18, angle_tol_deg)
-        )
+        # Strict diagonal-only: 33° to 57° (45° ± 12°), reject horizontal/vertical
+        diag_ok = (33.0 <= ang <= 57.0)
         if diag_ok and length >= min_len_px:
             keep.append(lbl)
             rows.append({
@@ -623,25 +664,51 @@ def detect_wrinkles_sobel_band(
                 "length_mm": float(length) / px_per_mm,
                 "angle_deg": float(ang),
             })
+            print(f"[DEBUG] Kept wrinkle lbl={lbl}: ang={ang:.1f}° len={length:.1f}px")
 
     keep_mask = np.isin(lab, keep)
+    
+    # Create separate visual mask: strict sub-component filtering for clean visualization
+    visual_mask = keep_mask.copy()
+    if visual_mask.sum() > 0:
+        from scipy.ndimage import label as ndlabel
+        # Re-label and check each small component's angle
+        temp_lab = ndlabel(visual_mask)[0]
+        clean_mask = np.zeros_like(visual_mask)
+        for temp_lbl in np.unique(temp_lab)[1:]:
+            comp_coords = np.argwhere(temp_lab == temp_lbl)
+            if len(comp_coords) < 5:
+                continue  # Too small to measure angle reliably
+            ang, _ = _rd_angle_len(comp_coords)
+            # Only keep components that are diagonal (33-57°)
+            if 33.0 <= ang <= 57.0:
+                clean_mask[temp_lab == temp_lbl] = True
+        visual_mask = clean_mask
 
-    # map kept endpoints back to full frame Y
+    # map kept endpoints back to full frame Y (only start/end per wrinkle)
+    # IMPORTANT: Extract endpoints from ORIGINAL labels to avoid merging nearby wrinkles
     kept_endpoints, kept_labels = [], []
-    lab2 = label(keep_mask, connectivity=2)
-    for lbl in np.unique(lab2)[1:]:
-        comp = (lab2 == lbl)
+    for lbl in keep:
+        comp = (lab == lbl)
         eps = _rd_skel_endpoints(comp)
+        before_filter = len(eps)
+        eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
+        after_filter = len(eps)
+        print(f"  [EP] lbl={lbl}: {before_filter} endpoints -> {after_filter} (start/end only)")
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 
     stats_df  = pd.DataFrame(rows)
     full_edge = np.full(H, np.nan); full_edge[y0:y1] = edge_x
-    mask_full = np.zeros_like(img, dtype=bool); mask_full[y0:y1, :] = keep_mask
+    mask_full = np.zeros_like(img, dtype=bool); mask_full[y0:y1, :] = keep_mask  # Full mask for measurements
+    visual_full = np.zeros_like(img, dtype=bool); visual_full[y0:y1, :] = visual_mask  # Clean mask for viz
     roi_full  = np.zeros_like(img, dtype=bool); roi_full[y0:y1, :]  = roi_mask
+    
+    print(f"[DEBUG] Sobel {coating_side}: kept {len(keep)} wrinkles, mask_full.sum={mask_full.sum()}, visual={visual_full.sum()}")
 
     return {
-        "mask_skel": mask_full,
+        "mask_skel": mask_full,  # Full mask for measurements (used by _metrics_from_res)
+        "mask_visual": visual_full,  # Clean diagonal-only mask for visualization
         "edge_x": full_edge,
         "roi_mask": roi_full,
         "stats": stats_df,
@@ -760,7 +827,8 @@ def detect_wrinkles_gabor_band(
     keep, rows = [], []
     for lbl, coords in zip(props["label"], props["coords"]):
         ang, length = _angle_len(coords)
-        if (abs(ang - angle_center_deg) <= angle_tol_deg) and (length >= min_len_px):
+        # Strict diagonal-only: 33° to 57° (45° ± 12°), reject horizontal/vertical
+        if (33.0 <= ang <= 57.0) and (length >= min_len_px):
             keep.append(lbl)
             rows.append({
                 "label": int(lbl),
@@ -770,23 +838,46 @@ def detect_wrinkles_gabor_band(
             })
 
     keep_mask = np.isin(lab, keep)
+    
+    # Create separate visual mask: strict sub-component filtering for clean visualization
+    visual_mask = keep_mask.copy()
+    if visual_mask.sum() > 0:
+        from scipy.ndimage import label as ndlabel
+        temp_lab = ndlabel(visual_mask)[0]
+        clean_mask = np.zeros_like(visual_mask)
+        for temp_lbl in np.unique(temp_lab)[1:]:
+            comp_coords = np.argwhere(temp_lab == temp_lbl)
+            if len(comp_coords) < 5:
+                continue
+            ang, _ = _rd_angle_len(comp_coords)
+            if 33.0 <= ang <= 57.0:
+                clean_mask[temp_lab == temp_lbl] = True
+        visual_mask = clean_mask
 
-    # --- map to full frame + endpoints ---
+    # --- map to full frame + endpoints (only start/end per wrinkle) ---
+    # IMPORTANT: Extract endpoints from ORIGINAL labels to avoid merging nearby wrinkles
     kept_endpoints, kept_labels = [], []
-    lab2 = label(keep_mask, connectivity=2)
-    for lbl in np.unique(lab2)[1:]:
-        comp = (lab2 == lbl)
+    for lbl in keep:
+        comp = (lab == lbl)
         eps = _rd_skel_endpoints(comp)
+        before_filter = len(eps)
+        eps = _rd_start_end_endpoints(eps)  # Filter to only start/end points
+        after_filter = len(eps)
+        print(f"  [EP] lbl={lbl}: {before_filter} endpoints -> {after_filter} (start/end only)")
         kept_endpoints.extend([(y + y0, x) for (y, x) in eps])
         kept_labels.extend([int(lbl)] * len(eps))
 
     stats_df  = pd.DataFrame(rows)
     full_edge = np.full(H, np.nan); full_edge[y0:y1] = edge_x
-    mask_full = np.zeros_like(img, bool); mask_full[y0:y1, :] = keep_mask
+    mask_full = np.zeros_like(img, bool); mask_full[y0:y1, :] = keep_mask  # Full mask for measurements
+    visual_full = np.zeros_like(img, bool); visual_full[y0:y1, :] = visual_mask  # Clean mask for viz
     roi_full  = np.zeros_like(img, bool); roi_full[y0:y1, :]  = roi_mask
+    
+    print(f"[DEBUG] Gabor {coating_side}: kept {len(keep)} wrinkles, mask_full.sum={mask_full.sum()}, visual={visual_full.sum()}")
 
     return {
-        "mask_skel": mask_full,
+        "mask_skel": mask_full,  # Full mask for measurements
+        "mask_visual": visual_full,  # Clean diagonal-only mask for visualization
         "edge_x": full_edge,
         "roi_mask": roi_full,
         "stats": stats_df,

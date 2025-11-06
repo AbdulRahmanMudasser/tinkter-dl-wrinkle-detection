@@ -374,15 +374,29 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                 ex = ex[:min_len]
                 yy = yy[:min_len]
                 
-                ax.plot(ex, yy, color="blue", linewidth=2, label="Beschichtungskante")
+                # Trim blue line to wrinkle region only
+                wrinkle_points = res.get("wrinkle_points", [])
+                if wrinkle_points:
+                    # Get Y range of wrinkles (relative to y0)
+                    wrinkle_ys = [ry - y0 for (ry, rx) in wrinkle_points if y0 <= ry < y1]
+                    if wrinkle_ys:
+                        y_min_wrinkle = max(0, min(wrinkle_ys) - 10)  # Add 10px margin
+                        y_max_wrinkle = min(len(yy) - 1, max(wrinkle_ys) + 10)
+                        
+                        # Trim arrays to wrinkle region
+                        ex_trimmed = ex[y_min_wrinkle:y_max_wrinkle+1]
+                        yy_trimmed = yy[y_min_wrinkle:y_max_wrinkle+1]
+                        
+                        ax.plot(ex_trimmed, yy_trimmed, color="blue", linewidth=2, label="Beschichtungskante")
+                # If no wrinkles, don't draw blue line
 
-                # skeleton overlay
-                mask = res["mask_skel"]
+                # skeleton overlay (use visual mask for clean diagonal-only display)
+                mask = res.get("mask_visual", res["mask_skel"])  # Fallback to mask_skel if no visual
                 ys, xs = np.where(mask[y0:y1, :])
                 if ys.size:
                     ax.scatter(xs, ys, s=4, linewidths=0, c="#00FFFF", alpha=0.9)
 
-                # endpoints only (decluttered overlay)
+                # endpoints only (decluttered overlay - only start/end per wrinkle)
                 for (ry, rx) in res.get("wrinkle_points", []):
                     if y0 <= ry < y1:
                         ax.scatter([rx], [ry - y0], s=28, c="red", edgecolors="none")
@@ -392,67 +406,49 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                 ax.set_ylabel("")
                 canvas.draw()
 
+            # Debug: Check endpoint counts
+            print(f"[PLOT] AS endpoints: {len(best_as[2].get('wrinkle_points', []))}, BS endpoints: {len(best_bs[2].get('wrinkle_points', []))}")
+            
             draw_one(self.canvas_wrinkles_AS, self.wrinkles_AS_fig, as_p, best_as[2])
             draw_one(self.canvas_wrinkles_BS, self.wrinkles_BS_fig, bs_p, best_bs[2])
 
             # --- KPIs from visible wrinkles only (respect current ROI y0:y1) ---
             def _metrics_from_res(res, y0, y1):
                 import numpy as np
-                from skimage.measure import label
+                import pandas as pd
 
-                # only endpoints inside the ROI
-                wr_pts = [(ry, rx) for (ry, rx) in res.get("wrinkle_points", [])
-                          if y0 <= ry < y1]
-                mask = res.get("mask_skel", None)
-                if mask is None or mask.sum() == 0 or not wr_pts:
-                    return 0, 0.0, 0.0, 0.0
+                # Use the stats DataFrame directly from detection (already filtered!)
+                stats = res.get("stats", pd.DataFrame())
+                if stats.empty:
+                    return 0, 0.0, 0.0, 0.0, 0, 0
 
-                lab = label(mask, connectivity=2)
                 px_per_mm = float(getattr(vars, "PX_PER_MM_X", 10.0))
-
-                count = 0
-                lens_mm, heights_mm, angles_deg = [], [], []
-                for (ry, rx) in wr_pts:
-                    if not (0 <= ry < lab.shape[0] and 0 <= rx < lab.shape[1]):
-                        continue
-                    lab_id = int(lab[ry, rx])
-                    if lab_id == 0:
-                        continue
-
-                    coords = np.argwhere(lab == lab_id)
-                    if coords.shape[0] < 2:
-                        continue
-
-                    y = coords[:, 0].astype(float)
-                    x = coords[:, 1].astype(float)
-                    # PCA for angle & length
-                    xc, yc = x - x.mean(), y - y.mean()
-                    Sxx = (xc * xc).sum();
-                    Syy = (yc * yc).sum();
-                    Sxy = (xc * yc).sum()
-                    theta = 0.5 * np.arctan2(2 * Sxy, (Sxx - Syy) + 1e-9)
-                    ang = abs(np.rad2deg(theta))
-                    ux, uy = np.cos(theta), np.sin(theta)
-                    proj = xc * ux + yc * uy
-
-                    length_px = float(proj.max() - proj.min())
-                    height_px = float(y.max() - y.min())
-
-                    lens_mm.append(length_px / px_per_mm)
-                    heights_mm.append(height_px / px_per_mm)
-                    angles_deg.append(ang)
-                    count += 1
-
+                
+                # Extract metrics from the stats DataFrame
+                count = len(stats)
                 if count == 0:
                     return 0, 0.0, 0.0, 0.0, 0, 0
+                
+                lens_mm = stats["length_mm"].values if "length_mm" in stats.columns else []
+                angles_deg = stats["angle_deg"].values if "angle_deg" in stats.columns else []
+                
+                # Calculate heights from length (approximation for diagonal wrinkles)
+                # For 45° diagonal, height ≈ length * sin(45°) ≈ 0.7 * length
+                heights_mm = lens_mm * 0.7 if len(lens_mm) > 0 else []
+                
+                avg_len = float(np.mean(lens_mm)) if len(lens_mm) > 0 else 0.0
+                avg_h = float(np.mean(heights_mm)) if len(heights_mm) > 0 else 0.0
+                dom_ang = float(np.median(angles_deg)) if len(angles_deg) > 0 else 0.0
+                
                 # Classify: Long (>=20mm) vs Short (<20mm)
                 long_count = sum(1 for L in lens_mm if L >= 20.0)
                 short_count = count - long_count
+                
                 return (
                     count,
-                    float(np.mean(lens_mm)),
-                    float(np.mean(heights_mm)),
-                    float(np.median(angles_deg)),
+                    avg_len,
+                    avg_h,
+                    dom_ang,
                     short_count,
                     long_count,
                 )
@@ -493,7 +489,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=100, tophat_rad=8,
                     min_len_px=30, endpoint_dist_px=40,
-                    angle_center_deg=45.0, angle_tol_deg=18,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=20, super_permissive=False
                 )
                 cands.append(("TopHatBalanced", r, _score(r)))
@@ -504,7 +500,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=80, tophat_rad=10,
                     min_len_px=35, endpoint_dist_px=30,
-                    angle_center_deg=45.0, angle_tol_deg=16,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=25, super_permissive=False
                 )
                 cands.append(("TopHatStrict", r, _score(r)))
@@ -515,7 +511,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=120, sobel_sigma=1.2,
                     thr_percentile=75, min_len_px=30,
-                    angle_center_deg=45.0, angle_tol_deg=18,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=16
                 )
                 cands.append(("SobelBalanced", r, _score(r)))
@@ -526,7 +522,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=280, thetas_deg=(40, 45, 50),
                     frequencies=(0.05, 0.08), min_len_px=30,
-                    angle_center_deg=45.0, angle_tol_deg=18,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=18
                 )
                 cands.append(("Gabor", r, _score(r)))
@@ -537,7 +533,7 @@ class WrinkleDetectionFrame(ctk.CTkFrame):
                     coating_side=coating_side,
                     edge_band_px=None, sobel_sigma=1.0,
                     thr_percentile=70, min_len_px=20,
-                    angle_center_deg=45.0, angle_tol_deg=25,
+                    angle_center_deg=45.0, angle_tol_deg=12,
                     small_remove_px=12
                 )
                 cands.append(("SobelFallback", r, _score(r)))
